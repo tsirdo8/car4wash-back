@@ -6,6 +6,7 @@ import passport from "./config/passport.js";
 import authRoutes from "./routes/auth.js";
 import carwashRoutes from "./routes/carwash.js";
 import bookingRoutes from "./routes/booking.js";
+import adminRoutes from "./routes/admin.js";
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ const startServer = async () => {
   app.use("/api/auth", authRoutes);
   app.use("/api/carwash", carwashRoutes);
   app.use("/api/booking", bookingRoutes);
+  app.use("/api/admin", adminRoutes);
 
   // health
   app.get("/", (_, res) => res.send({ ok: true }));
