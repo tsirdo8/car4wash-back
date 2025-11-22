@@ -28,7 +28,7 @@ router.get(
   })
 );
 
-roouter.get(
+router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
