@@ -18,7 +18,7 @@ router.post(
 router.post("/test-webhook", express.json(), testWebhook);
 
 // Add a GET endpoint for testing
-router.get("  ", (req, res) => {
+router.get("/test", (req, res) => {
   res.json({
     message: "Stripe routes are working!",
     endpoints: {

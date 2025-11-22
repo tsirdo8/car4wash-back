@@ -28,31 +28,18 @@ router.get(
   })
 );
 
-router.get(
+roouter.get(
   "/google/callback",
   passport.authenticate("google", {
-    session: false, // We're using JWT, not sessions
+    session: false,
     failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed`,
   }),
   (req, res) => {
     try {
-      // Generate JWT token
       const token = generateToken(req.user);
 
-      // Redirect to frontend with token
-      res.redirect(
-        `${
-          process.env.FRONTEND_URL
-        }/auth/success?token=${token}&user=${encodeURIComponent(
-          JSON.stringify({
-            id: req.user._id,
-            name: req.user.name,
-            email: req.user.email,
-            role: req.user.role,
-            avatar: req.user.avatar,
-          })
-        )}`
-      );
+     
+      res.redirect(`${process.env.FRONTEND_URL}/dashboard?token=${token}`);
     } catch (error) {
       console.error("OAuth callback error:", error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=server_error`);

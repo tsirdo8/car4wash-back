@@ -7,8 +7,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, index: true },
   phone: { type: String },
 
-  password: { type: String }, // optional for Google users
-
+  password: { type: String }, 
   // owner may have multiple carwashes
   carwashes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Carwash" }],
 
