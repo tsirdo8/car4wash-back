@@ -14,7 +14,7 @@ const generateToken = (user) => {
 // GOOGLE AUTH ONLY — LEAVE THIS UNTOUCHED
 
 router.get(
-  "/google",
+  "/",
   passport.authenticate("google", {
     scope: ["profile", "email"],
     session: false,
@@ -22,7 +22,7 @@ router.get(
 );
 
 router.get(
-  "/google/callback",
+  "/callback",
   passport.authenticate("google", {
     session: false,
     failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed`,
