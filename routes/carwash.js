@@ -15,3 +15,4 @@ router.patch("/:id", auth, updateCarwash);
 router.get("/", listNearby); // e.g. GET /api/carwash?lng=...&lat=...
 
 export default router;
+ 

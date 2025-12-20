@@ -1,47 +1,82 @@
 import mongoose from "mongoose";
 
 const carwashSchema = new mongoose.Schema({
-  businessName: { type: String, required: true },
-  ownerName: { type: String, required: true },
-  
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-
-  phone: { type: String },
-
-location: {
-  address: {
+  businessName: {
     type: String,
     required: true,
-    default: "Address to be updated"
   },
-  coordinates: {
-    type: {
+
+  ownerName: {
+    type: String,
+    required: true,
+  },
+
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+
+  password: {
+    type: String,
+    required: true,
+  },
+
+  phone: String,
+
+  location: {
+    address: {
       type: String,
-      enum: ["Point"],
-      default: "Point"
+      required: true,        // ❌ NO DEFAULT
     },
     coordinates: {
-      type: [Number],
-      required: true,
-      default: [0, 0]           // ← THIS LINE IS MANDATORY
-    }
-  }
-},
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+      coordinates: {
+        type: [Number],
+        required: true,      // ❌ NO DEFAULT
+        validate: {
+          validator: function (v) {
+            return Array.isArray(v) && v.length === 2;
+          },
+          message: "Coordinates must be [lng, lat]",
+        },
+      },
+    },
+  },
+
   services: [
     {
-      name: { type: String, required: true },
-      price: { type: Number, required: true },
+      name: {
+        type: String,
+        required: true,
+      },
+      price: {
+        type: Number,
+        required: true,
+      },
       duration: Number,
     },
   ],
 
   workingHours: {
-    open: { type: String, default: "09:00" },
-    close: { type: String, default: "20:00" },
+    open: {
+      type: String,
+      required: true,        // ❌ NO DEFAULT
+    },
+    close: {
+      type: String,
+      required: true,        // ❌ NO DEFAULT
+    },
   },
 
-  createdAt: { type: Date, default: Date.now },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
 carwashSchema.index({ "location.coordinates": "2dsphere" });
