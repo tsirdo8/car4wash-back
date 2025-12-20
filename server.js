@@ -4,10 +4,10 @@ import cors from "cors";
 import connectDB from "./config/db.js";
 import passport from "./config/passport.js";
 
-// AUTH ROUTES (SEPARATED)
-import googleAuthRoutes from "./routes/auth.js";          // ONLY Google OAuth
-import userAuthRoutes from "./routes/userAuth.js";        // Customers
-import carwashAuthRoutes from "./routes/carwashAuth.js";  // Carwash Owners
+// AUTH ROUTES
+import googleAuthRoutes from "./routes/auth.js";
+import userAuthRoutes from "./routes/userAuth.js";
+import carwashAuthRoutes from "./routes/carwashAuth.js";
 
 // OTHER ROUTES
 import carwashRoutes from "./routes/carwash.js";
@@ -22,26 +22,54 @@ const startServer = async () => {
 
   const app = express();
 
-  // Stripe webhook (raw body)
+  /* =========================
+     CORS — MUST BE FIRST
+  ========================== */
+  app.use(
+    cors({
+      origin: [
+        "http://localhost:5173",
+        "https://cs2-hm11-beta.vercel.app",
+      ],
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    })
+  );
+
+  // Allow preflight requests
+  app.options("*", cors());
+
+  /* =========================
+     STRIPE WEBHOOK (RAW BODY)
+     MUST BE BEFORE express.json
+  ========================== */
   app.use("/api/stripe", stripeRoutes);
 
-  // Middleware
-  app.use(cors());
+  /* =========================
+     BODY + AUTH MIDDLEWARE
+  ========================== */
   app.use(express.json());
   app.use(passport.initialize());
 
-  // AUTH ROUTES
-  app.use("/api/auth/google", googleAuthRoutes);   // Google login only
-  app.use("/api/users", userAuthRoutes);           // Customer register/login
-  app.use("/api/carwash/auth", carwashAuthRoutes); // Carwash owner auth
+  /* =========================
+     AUTH ROUTES
+  ========================== */
+  app.use("/api/auth/google", googleAuthRoutes);
+  app.use("/api/users", userAuthRoutes);
+  app.use("/api/carwash/auth", carwashAuthRoutes);
 
-  // OTHER MODULE ROUTES
+  /* =========================
+     MODULE ROUTES
+  ========================== */
   app.use("/api/carwash", carwashRoutes);
   app.use("/api/booking", bookingRoutes);
   app.use("/api/admin", adminRoutes);
 
-  // health check
-  app.get("/", (_, res) => res.send({ ok: true }));
+  /* =========================
+     HEALTH CHECK
+  ========================== */
+  app.get("/", (_, res) => res.json({ ok: true }));
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
