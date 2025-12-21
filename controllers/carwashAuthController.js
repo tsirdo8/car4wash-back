@@ -14,29 +14,70 @@ const createCarwashToken = (carwash) => {
 // Register new carwash
 export const registerCarwash = async (req, res) => {
   try {
-    const { businessName, ownerName, email, password, phone } = req.body;
-    if (!businessName || !ownerName || !email || !password) {
-      return res.status(400).json({ message: "Missing fields" });
+    const {
+      businessName,
+      ownerName,
+      email,
+      password,
+      phone,
+      location,
+      services,
+      workingHours
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !businessName ||
+      !ownerName ||
+      !email ||
+      !password ||
+      !location?.address ||
+      !location?.coordinates?.coordinates?.length ||
+      !services?.length ||
+      !workingHours?.open ||
+      !workingHours?.close
+    ) {
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
     // Check if email already exists
     const exists = await Carwash.findOne({ email });
     if (exists) return res.status(409).json({ message: "Email already exists" });
 
+    // Hash password
     const hashed = await bcrypt.hash(password, 10);
 
+    // Create carwash document
     const carwash = new Carwash({
       businessName,
       ownerName,
       email,
       password: hashed,
-      phone,
+      phone: phone || "",
+      location: {
+        address: location.address,
+        coordinates: {
+          type: "Point",
+          coordinates: location.coordinates.coordinates, // [lng, lat]
+        },
+      },
+      services: services.map(s => ({
+        name: s.name,
+        price: s.price,
+        duration: s.duration || null,
+      })),
+      workingHours: {
+        open: workingHours.open,
+        close: workingHours.close,
+      },
     });
 
     await carwash.save();
 
+    // Create token
     const token = createCarwashToken(carwash);
 
+    // Respond
     res.status(201).json({
       token,
       carwash: {
@@ -45,11 +86,15 @@ export const registerCarwash = async (req, res) => {
         ownerName: carwash.ownerName,
         email: carwash.email,
         phone: carwash.phone,
+        location: carwash.location,
+        services: carwash.services,
+        workingHours: carwash.workingHours,
       },
     });
   } catch (err) {
-    console.error("❌ Carwash registration error:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ Carwash registration error:", err.message);
+    console.error(err.stack);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -76,11 +121,15 @@ export const loginCarwash = async (req, res) => {
         ownerName: carwash.ownerName,
         email: carwash.email,
         phone: carwash.phone,
+        location: carwash.location,
+        services: carwash.services,
+        workingHours: carwash.workingHours,
       },
     });
   } catch (err) {
-    console.error("❌ Carwash login error:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ Carwash login error:", err.message);
+    console.error(err.stack);
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -96,6 +145,9 @@ export const currentUserCarwash = (req, res) => {
       ownerName: req.carwash.ownerName,
       email: req.carwash.email,
       phone: req.carwash.phone,
+      location: req.carwash.location,
+      services: req.carwash.services,
+      workingHours: req.carwash.workingHours,
     },
   });
 };
