@@ -10,16 +10,12 @@ const createToken = (id, role) => {
 
 // Cookie utility function
 const setAuthCookie = (res, token) => {
-  // For Vercel deployment, always use production settings
-  const isVercel = true; // Since you're deploying on Vercel
-  
   res.cookie("token", token, {
     httpOnly: true,
-    secure: true, // Always true for HTTPS on Vercel
-    sameSite: "none", // Required for cross-origin
+    secure: true,        // Always true for HTTPS
+    sameSite: "none",    // Required for cross-origin
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: "/",
-    domain: ".vercel.app", // Important: allows sharing across *.vercel.app
+    path: "/",           // Must match path for logout
   });
 };
 
@@ -47,7 +43,6 @@ export const registerUser = async (req, res) => {
 
     const token = createToken(user._id, user.role);
 
-    // Set HttpOnly cookie with correct cross-origin settings
     setAuthCookie(res, token);
 
     res.json({
@@ -57,7 +52,7 @@ export const registerUser = async (req, res) => {
         email: user.email,
         role: user.role,
       },
-      token: token, // Also return token for localStorage fallback
+      token, // optional fallback
     });
   } catch (err) {
     console.error("Register error:", err);
@@ -80,7 +75,6 @@ export const loginUser = async (req, res) => {
 
     const token = createToken(user._id, user.role);
 
-    // Set HttpOnly cookie with correct cross-origin settings
     setAuthCookie(res, token);
 
     res.json({
@@ -90,7 +84,7 @@ export const loginUser = async (req, res) => {
         email: user.email,
         role: user.role,
       },
-      token: token, // Also return token for localStorage fallback
+      token,
     });
   } catch (err) {
     console.error("Login error:", err);
@@ -100,18 +94,8 @@ export const loginUser = async (req, res) => {
 
 // ---------- CURRENT USER ----------
 export const currentUser = (req, res) => {
-  // Debug logging
-  console.log("=== currentUser endpoint ===");
-  console.log("Cookies:", req.cookies);
-  console.log("User from auth middleware:", req.user);
-  console.log("Origin:", req.headers.origin);
-  
   if (!req.user) {
-    console.log("No user found in request");
-    return res.status(401).json({ 
-      message: "Unauthorized",
-      help: "Please login again"
-    });
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   res.json({
@@ -128,10 +112,9 @@ export const logoutUser = (req, res) => {
     httpOnly: true,
     secure: true,
     sameSite: "none",
-    path: "/",
-    domain: ".vercel.app",
+    path: "/",   // MUST match login cookie path
   });
-  
+
   res.json({ message: "Logged out successfully" });
 };
 
@@ -144,15 +127,17 @@ export const debugAuth = (req, res) => {
       cookie: req.headers.cookie,
       authorization: req.headers.authorization,
     },
-    user: req.user ? {
-      _id: req.user._id,
-      email: req.user.email,
-      role: req.user.role,
-    } : null,
+    user: req.user
+      ? {
+          _id: req.user._id,
+          email: req.user.email,
+          role: req.user.role,
+        }
+      : null,
     env: {
       NODE_ENV: process.env.NODE_ENV,
       VERCEL: process.env.VERCEL,
       JWT_SECRET_SET: !!process.env.JWT_SECRET,
-    }
+    },
   });
 };
