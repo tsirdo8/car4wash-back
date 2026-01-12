@@ -141,3 +141,36 @@ export const debugAuth = (req, res) => {
     },
   });
 };
+
+// ---------- UPDATE USER ----------
+export const updateUser = async (req, res) => {
+  try {
+    const { name, email, phone, password } = req.body;
+
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (phone) updateData.phone = phone;
+    if (password) {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select("-password");
+
+    res.json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
+  } catch (err) {
+    console.error("Update user error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

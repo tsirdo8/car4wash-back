@@ -1,24 +1,22 @@
 import express from "express";
+import { auth } from "../middleware/auth.js";
 import {
   registerUser,
   loginUser,
   currentUser,
   logoutUser,
   debugAuth,
+  updateUser,   // import the new endpoint
 } from "../controllers/userAuthController.js";
-import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Public routes
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-
-// Debug route
-router.get("/debug", debugAuth);
-
-// Protected routes (require auth middleware)
 router.get("/me", auth, currentUser);
-router.post("/logout", logoutUser);
+router.post("/logout", auth, logoutUser);
+router.put("/update", auth, updateUser);
+
+router.get("/debug", debugAuth);
 
 export default router;
