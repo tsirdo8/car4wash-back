@@ -14,7 +14,8 @@ import carwashAuthRoutes from "../routes/carwashAuth.js";
 import carwashRoutes from "../routes/carwash.js";
 import bookingRoutes from "../routes/booking.js";
 import adminRoutes from "../routes/admin.js";
-import stripeRoutes from "../routes/stripe.js";
+import stripeRoutes from "../routes/stripe.js"
+
 
 dotenv.config();
 
