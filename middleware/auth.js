@@ -1,21 +1,45 @@
-import jwt from "jsonwebtoken";
-import User from "../models/User.js";
-import dotenv from "dotenv";
-dotenv.config();
-
+// middleware/auth.js
 export const auth = async (req, res, next) => {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token provided" });
-  }
-  const token = header.split(" ")[1];
   try {
+    console.log("=== AUTH MIDDLEWARE DEBUG ===");
+    console.log("Cookies:", req.cookies);
+    console.log("Authorization header:", req.headers.authorization);
+    console.log("Origin:", req.headers.origin);
+    
+    let token = req.cookies?.token;
+
+    if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    console.log("Token found:", token ? "YES" : "NO");
+    
+    if (!token) {
+      console.log("No token provided");
+      return res.status(401).json({ message: "Unauthorized - No token" });
+    }
+
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(payload.id).select("-password");
-    if (!user) return res.status(401).json({ message: "Invalid token user" });
-    req.user = user;
+    console.log("Token payload:", payload);
+
+    // Find user/carwash
+    let currentUser;
+    if (payload.role === "customer" || payload.role === "admin") {
+      currentUser = await User.findById(payload.id).select("-password");
+    } else if (payload.role === "carwash") {
+      currentUser = await Carwash.findById(payload.id).select("-password");
+    }
+
+    if (!currentUser) {
+      console.log("User not found for payload:", payload);
+      return res.status(401).json({ message: "Invalid token - User not found" });
+    }
+
+    console.log("Auth successful for:", currentUser.email);
+    req.user = currentUser;
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Token verification failed" });
+    console.error("Auth error:", err.message);
+    res.status(401).json({ message: "Token verification failed" });
   }
 };

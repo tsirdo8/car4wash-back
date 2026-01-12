@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import connectDB from "../config/db.js";
 import passport from "../config/passport.js";
 
@@ -20,7 +21,7 @@ dotenv.config();
 const app = express();
 
 /* =========================
-   DB CONNECTION (cached)
+   DB CONNECTION (CACHED)
 ========================= */
 let isConnected = false;
 const connectOnce = async () => {
@@ -32,29 +33,33 @@ const connectOnce = async () => {
 connectOnce();
 
 /* =========================
-   CORS
+   CORS (CORRECT – NO WILDCARDS)
 ========================= */
-app.use(cors({
+const corsOptions = {
   origin: [
     "http://localhost:5173",
     "https://cs2-hm11-beta.vercel.app",
-    "https://sng-1.vercel.app"    // ✅ add this
+    "https://sng-1.vercel.app",
+    "https://car4wash.vercel.app",
   ],
   credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+  ],
+  exposedHeaders: ["Set-Cookie"],
+};
 
+app.use(cors(corsOptions));
 
 /* =========================
-   STRIPE (RAW BODY)
+   MIDDLEWARE (ORDER MATTERS)
 ========================= */
-app.use("/api/stripe", stripeRoutes);
-
-/* =========================
-   MIDDLEWARE
-========================= */
+app.use(cookieParser());
 app.use(express.json());
 app.use(passport.initialize());
 
@@ -68,6 +73,20 @@ app.use("/api/carwash/auth", carwashAuthRoutes);
 app.use("/api/carwash", carwashRoutes);
 app.use("/api/booking", bookingRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/stripe", stripeRoutes);
+
+/* =========================
+   DEBUG
+========================= */
+app.get("/api/debug/cookies", (req, res) => {
+  res.json({
+    cookies: req.cookies,
+    headers: {
+      cookie: req.headers.cookie,
+      origin: req.headers.origin,
+    },
+  });
+});
 
 /* =========================
    HEALTH CHECK
@@ -75,6 +94,17 @@ app.use("/api/admin", adminRoutes);
 app.get("/", (_, res) => res.json({ ok: true }));
 
 /* =========================
-   EXPORT (NO app.listen!)
+   ERROR HANDLER
+========================= */
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    message: "Something went wrong",
+    error: process.env.NODE_ENV === "development" ? err.message : undefined,
+  });
+});
+
+/* =========================
+   EXPORT (SERVERLESS SAFE)
 ========================= */
 export default app;

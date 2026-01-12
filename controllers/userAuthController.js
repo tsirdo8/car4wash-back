@@ -1,17 +1,29 @@
-
-// controllers/userAuthController.js
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
-const createUserToken = (user) => {
-  return jwt.sign(
-    { id: user._id, role: "customer" },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+const createToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
 };
 
+// Cookie utility function
+const setAuthCookie = (res, token) => {
+  // For Vercel deployment, always use production settings
+  const isVercel = true; // Since you're deploying on Vercel
+  
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: true, // Always true for HTTPS on Vercel
+    sameSite: "none", // Required for cross-origin
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: "/",
+    domain: ".vercel.app", // Important: allows sharing across *.vercel.app
+  });
+};
+
+// ---------- REGISTER ----------
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
@@ -25,37 +37,40 @@ export const registerUser = async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
 
-    const user = new User({
+    const user = await User.create({
       name,
       email,
       password: hash,
       phone,
-      role: "customer", // customers only
+      role: "customer",
     });
 
-    await user.save();
+    const token = createToken(user._id, user.role);
 
-    const token = createUserToken(user);
+    // Set HttpOnly cookie with correct cross-origin settings
+    setAuthCookie(res, token);
 
     res.json({
-      token,
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
-        role: "customer",
+        role: user.role,
       },
+      token: token, // Also return token for localStorage fallback
     });
   } catch (err) {
+    console.error("Register error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// ---------- LOGIN ----------
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email, role: "customer" });
+    const user = await User.findOne({ email });
     if (!user)
       return res.status(401).json({ message: "Invalid credentials" });
 
@@ -63,28 +78,81 @@ export const loginUser = async (req, res) => {
     if (!match)
       return res.status(401).json({ message: "Invalid credentials" });
 
-    const token = createUserToken(user);
+    const token = createToken(user._id, user.role);
+
+    // Set HttpOnly cookie with correct cross-origin settings
+    setAuthCookie(res, token);
 
     res.json({
-      token,
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
       },
+      token: token, // Also return token for localStorage fallback
     });
   } catch (err) {
+    console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-export const currentUserUser = (req, res) => {
-  if (!req.user)
-    return res.status(401).json({ message: "Unauthorized" });
+// ---------- CURRENT USER ----------
+export const currentUser = (req, res) => {
+  // Debug logging
+  console.log("=== currentUser endpoint ===");
+  console.log("Cookies:", req.cookies);
+  console.log("User from auth middleware:", req.user);
+  console.log("Origin:", req.headers.origin);
+  
+  if (!req.user) {
+    console.log("No user found in request");
+    return res.status(401).json({ 
+      message: "Unauthorized",
+      help: "Please login again"
+    });
+  }
 
-  res.json({ user: req.user });
+  res.json({
+    _id: req.user._id,
+    name: req.user.name,
+    email: req.user.email,
+    role: req.user.role,
+  });
 };
 
+// ---------- LOGOUT ----------
+export const logoutUser = (req, res) => {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/",
+    domain: ".vercel.app",
+  });
+  
+  res.json({ message: "Logged out successfully" });
+};
 
-
+// ---------- DEBUG ENDPOINT ----------
+export const debugAuth = (req, res) => {
+  res.json({
+    cookies: req.cookies,
+    headers: {
+      origin: req.headers.origin,
+      cookie: req.headers.cookie,
+      authorization: req.headers.authorization,
+    },
+    user: req.user ? {
+      _id: req.user._id,
+      email: req.user.email,
+      role: req.user.role,
+    } : null,
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL: process.env.VERCEL,
+      JWT_SECRET_SET: !!process.env.JWT_SECRET,
+    }
+  });
+};
