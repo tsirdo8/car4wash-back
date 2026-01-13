@@ -12,10 +12,10 @@ const createToken = (id, role) => {
 const setAuthCookie = (res, token) => {
   res.cookie("token", token, {
     httpOnly: true,
-    secure: true,        // Always true for HTTPS
-    sameSite: "none",    // Required for cross-origin
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: "/",           // Must match path for logout
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
   });
 };
 
@@ -108,12 +108,12 @@ export const currentUser = (req, res) => {
 
 // ---------- LOGOUT ----------
 export const logoutUser = (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    path: "/",   // MUST match login cookie path
-  });
+res.clearCookie("token", {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  path: "/",
+});
 
   res.json({ message: "Logged out successfully" });
 };
