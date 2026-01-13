@@ -10,18 +10,10 @@ const generateToken = (user) => {
   });
 };
 
-// Cookie helper
-const setAuthCookie = (res, token) => {
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production", // true on Vercel
-    sameSite: "none",
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  });
-};
+// Remove cookie helper entirely — we don't need it anymore for this flow
+// (You can keep it if you use cookies elsewhere, but not here)
 
-// Google OAuth login
+// Google OAuth login — unchanged
 router.get(
   "/",
   passport.authenticate("google", {
@@ -30,7 +22,7 @@ router.get(
   })
 );
 
-// Google OAuth callback
+// Google OAuth callback — FIXED
 router.get(
   "/callback",
   passport.authenticate("google", {
@@ -39,14 +31,23 @@ router.get(
   }),
   (req, res) => {
     try {
+      if (!req.user) {
+        throw new Error("No user after authentication");
+      }
+
       const token = generateToken(req.user);
 
-      // ✅ Set cookie instead of just sending token via URL
-      setAuthCookie(res, token);
+      // Build safe redirect URL with token in query param
+      const redirectUrl = new URL(`${process.env.FRONTEND_URL}/dashboard`);
+      redirectUrl.searchParams.set("token", token);
 
-      // Redirect to dashboard (frontend can read user info via /me)
-      res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+      // Optional: pass minimal non-sensitive info (helps avoid immediate /me call)
+      // redirectUrl.searchParams.set("name", encodeURIComponent(req.user.name || ""));
+      // redirectUrl.searchParams.set("email", encodeURIComponent(req.user.email || ""));
+
+      res.redirect(redirectUrl.toString());
     } catch (error) {
+      console.error("Google OAuth callback error:", error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=server_error`);
     }
   }
