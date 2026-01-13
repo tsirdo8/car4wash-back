@@ -9,15 +9,18 @@ const createToken = (id, role) => {
 };
 
 // Cookie utility function
+const isProd = process.env.VERCEL === "1";
+
 const setAuthCookie = (res, token) => {
   res.cookie("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: isProd,        // HTTPS on Vercel
+    sameSite: isProd ? "none" : "lax",
     path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
+
 
 // ---------- REGISTER ----------
 export const registerUser = async (req, res) => {
@@ -108,15 +111,18 @@ export const currentUser = (req, res) => {
 
 // ---------- LOGOUT ----------
 export const logoutUser = (req, res) => {
-res.clearCookie("token", {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-  path: "/",
-});
+  const isProd = process.env.VERCEL === "1";
+
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/",
+  });
 
   res.json({ message: "Logged out successfully" });
 };
+
 
 // ---------- DEBUG ENDPOINT ----------
 export const debugAuth = (req, res) => {
