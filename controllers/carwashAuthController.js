@@ -151,3 +151,47 @@ export const currentUserCarwash = (req, res) => {
     },
   });
 };
+
+// In controllers/carwashAuthController.js
+
+export const updateCarwash = async (req, res) => {
+  try {
+    if (!req.carwash) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { businessName, ownerName, email, phone, password } = req.body;
+
+    const updateData = {};
+    if (businessName) updateData.businessName = businessName;
+    if (ownerName) updateData.ownerName = ownerName;
+    if (email) updateData.email = email;
+    if (phone) updateData.phone = phone;
+    if (password) {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    // Note: location/services/workingHours updates can be added later if needed
+
+    const updated = await Carwash.findByIdAndUpdate(
+      req.carwash._id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select("-password");
+
+    res.json({
+      message: "Carwash profile updated successfully",
+      carwash: {
+        id: updated._id,
+        businessName: updated.businessName,
+        ownerName: updated.ownerName,
+        email: updated.email,
+        phone: updated.phone,
+        // add other fields you want to return
+      },
+    });
+  } catch (err) {
+    console.error("Update carwash error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
