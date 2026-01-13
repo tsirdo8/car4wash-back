@@ -5,21 +5,24 @@ import cookieParser from "cookie-parser";
 import connectDB from "../config/db.js";
 import passport from "../config/passport.js";
 
-// ROUTES
+// AUTH ROUTES
 import googleAuthRoutes from "../routes/auth.js";
 import userAuthRoutes from "../routes/userAuth.js";
 import carwashAuthRoutes from "../routes/carwashAuth.js";
+
+// OTHER ROUTES
 import carwashRoutes from "../routes/carwash.js";
 import bookingRoutes from "../routes/booking.js";
 import adminRoutes from "../routes/admin.js";
-import stripeRoutes from "../routes/stripe.js";
+import stripeRoutes from "../routes/stripe.js"
+
 
 dotenv.config();
 
 const app = express();
 
 /* =========================
-   DB CONNECTION (SAFE)
+   DB CONNECTION (CACHED)
 ========================= */
 let isConnected = false;
 const connectOnce = async () => {
@@ -31,35 +34,33 @@ const connectOnce = async () => {
 connectOnce();
 
 /* =========================
-   CORS (🔥 CORRECT VERSION)
+   CORS (CORRECT – NO WILDCARDS)
 ========================= */
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://cs2-hm11-beta.vercel.app",
-  "https://sng-1.vercel.app",
-  "https://car4wash.vercel.app",
-];
+const corsOptions = {
+  origin: [
+    "http://localhost:5173",
+    "https://cs2-hm11-beta.vercel.app",
+    "https://sng-1.vercel.app",
+    "https://car4wash.vercel.app",
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+  ],
+  exposedHeaders: ["Set-Cookie"],
+};
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow server-to-server / Postman / curl
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, origin); // 🔥 MUST return exact origin
-      }
-
-      return callback(new Error("CORS not allowed"));
-    },
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
 
 /* =========================
    MIDDLEWARE (ORDER MATTERS)
 ========================= */
-app.use(cookieParser());     // 🔥 BEFORE routes
+app.use(cookieParser());
 app.use(express.json());
 app.use(passport.initialize());
 
@@ -76,14 +77,14 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/stripe", stripeRoutes);
 
 /* =========================
-   DEBUG (KEEP THIS!)
+   DEBUG
 ========================= */
 app.get("/api/debug/cookies", (req, res) => {
   res.json({
     cookies: req.cookies,
     headers: {
-      origin: req.headers.origin,
       cookie: req.headers.cookie,
+      origin: req.headers.origin,
     },
   });
 });
@@ -99,11 +100,12 @@ app.get("/", (_, res) => res.json({ ok: true }));
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
-    message: err.message || "Something went wrong",
+    message: "Something went wrong",
+    error: process.env.NODE_ENV === "development" ? err.message : undefined,
   });
 });
 
 /* =========================
-   EXPORT (VERCEL SAFE)
+   EXPORT (SERVERLESS SAFE)
 ========================= */
 export default app;

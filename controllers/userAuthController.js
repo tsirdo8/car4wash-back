@@ -8,20 +8,6 @@ const createToken = (id, role) => {
   });
 };
 
-// Cookie utility function
-const isProd = process.env.VERCEL === "1";
-
-const setAuthCookie = (res, token) => {
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: isProd,        // HTTPS on Vercel
-    sameSite: isProd ? "none" : "lax",
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-};
-
-
 // ---------- REGISTER ----------
 export const registerUser = async (req, res) => {
   try {
@@ -46,16 +32,15 @@ export const registerUser = async (req, res) => {
 
     const token = createToken(user._id, user.role);
 
-    setAuthCookie(res, token);
-
     res.json({
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone || null,
         role: user.role,
       },
-      token, // optional fallback
+      token,
     });
   } catch (err) {
     console.error("Register error:", err);
@@ -78,13 +63,12 @@ export const loginUser = async (req, res) => {
 
     const token = createToken(user._id, user.role);
 
-    setAuthCookie(res, token);
-
     res.json({
       user: {
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone || null,
         role: user.role,
       },
       token,
@@ -105,32 +89,22 @@ export const currentUser = (req, res) => {
     _id: req.user._id,
     name: req.user.name,
     email: req.user.email,
+    phone: req.user.phone || null,
     role: req.user.role,
   });
 };
 
 // ---------- LOGOUT ----------
+// Optional – can be used to invalidate if you implement token blacklisting later
 export const logoutUser = (req, res) => {
-  const isProd = process.env.VERCEL === "1";
-
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    path: "/",
-  });
-
   res.json({ message: "Logged out successfully" });
 };
-
 
 // ---------- DEBUG ENDPOINT ----------
 export const debugAuth = (req, res) => {
   res.json({
-    cookies: req.cookies,
     headers: {
       origin: req.headers.origin,
-      cookie: req.headers.cookie,
       authorization: req.headers.authorization,
     },
     user: req.user
@@ -173,7 +147,13 @@ export const updateUser = async (req, res) => {
 
     res.json({
       message: "Profile updated successfully",
-      user: updatedUser,
+      user: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        phone: updatedUser.phone || null,
+        role: updatedUser.role,
+      },
     });
   } catch (err) {
     console.error("Update user error:", err);
