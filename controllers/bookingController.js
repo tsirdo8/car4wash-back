@@ -1,206 +1,171 @@
-// controllers/bookingController.js
 import Booking from "../models/Booking.js";
 import Carwash from "../models/Carwash.js";
-import {
-  createPaymentIntent,
-  confirmPayment,
-} from "../config/stripe.config.js";
+import { createPaymentIntent } from "../services/stripeService.js";
+import nodemailer from "nodemailer";
 
-/**
- * Customer creates booking with payment
- */
-export const createBooking = async (req, res) => {
+// At the top of bookingController.js
+import nodemailer from "nodemailer";
+
+// Create reusable transporter (do this once, outside functions)
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_APP_PASSWORD, // Use App Password, not regular password!
+  },
+});
+
+// Function to send email
+const sendBookingNotification = async (booking, carwash) => {
   try {
-    if (req.user.role !== "customer") {
-      return res
-        .status(403)
-        .json({ message: "Only customers can create bookings" });
+    await transporter.sendMail({
+      from: `"Car4Wash" <${process.env.EMAIL_USER}>`,
+      to: carwash.email,
+      subject: "New Booking Received",
+      html: `
+        <h2>New Booking!</h2>
+        <p>Customer booked: <strong>${booking.service.name}</strong></p>
+        <p>Time: ${new Date(booking.scheduledTime).toLocaleString()}</p>
+        <p>Amount: ${booking.service.price} ₾</p>
+        <p>Check your dashboard: <a href="https://car4wash.vercel.app/owner-bookings">View Bookings</a></p>
+      `,
+    });
+    console.log("Email sent to carwash owner");
+  } catch (err) {
+    console.error("Email notification failed:", err);
+  }
+};
+// Check if time slot is available
+export const checkAvailability = async (req, res) => {
+  const { carwashId, date, time } = req.body;
+
+  try {
+    const requestedTime = new Date(`${date}T${time}:00Z`);
+
+    // Find any overlapping booking (same carwash, same exact time)
+    const existing = await Booking.findOne({
+      carwash: carwashId,
+      scheduledTime: requestedTime,
+      status: { $in: ["pending", "accepted"] },
+    });
+
+    res.json({ available: !existing });
+  } catch (err) {
+    console.error("Availability check error:", err);
+    res.status(500).json({ message: "Failed to check availability" });
+  }
+};
+
+// Create pending booking + PaymentIntent
+export const createBooking = async (req, res) => {
+  const { carwashId, serviceId, date, time } = req.body;
+
+  try {
+    const requestedTime = new Date(`${date}T${time}:00Z`);
+
+    // Double-check availability (race condition protection)
+    const existing = await Booking.findOne({
+      carwash: carwashId,
+      scheduledTime: requestedTime,
+      status: { $in: ["pending", "accepted"] },
+    });
+
+    if (existing) {
+      return res.status(409).json({ message: "This time slot is already booked" });
     }
 
-    const { carwashId, serviceId, scheduledTime } = req.body;
-    if (!carwashId || !serviceId) {
-      return res.status(400).json({ message: "Missing fields" });
-    }
-
+    // Find carwash & service price
     const carwash = await Carwash.findById(carwashId);
     if (!carwash) return res.status(404).json({ message: "Carwash not found" });
 
-    const service =
-      carwash.services.id(serviceId) ||
-      carwash.services.find((s) => String(s._id) === String(serviceId));
+    const service = carwash.services.id(serviceId);
+    if (!service) return res.status(404).json({ message: "Service not found" });
 
-    if (!service) return res.status(400).json({ message: "Service not found" });
+    const amount = service.price;
 
-    // Create booking first
-    const booking = new Booking({
+    // Create pending booking
+    const booking = await Booking.create({
       customer: req.user._id,
-      carwash: carwash._id,
+      carwash: carwashId,
       service: {
         name: service.name,
         price: service.price,
         duration: service.duration,
       },
-      scheduledTime: scheduledTime ? new Date(scheduledTime) : undefined,
+      scheduledTime: requestedTime,
+      status: "pending",
       payment: {
-        amount: service.price,
-        currency: "usd",
+        status: "pending",
+        amount,
+        currency: "gel", // or "usd"
       },
     });
 
-    await booking.save();
-
-    // Create Stripe payment intent
-    try {
-      const paymentIntent = await createPaymentIntent(service.price, "usd", {
-        bookingId: booking._id.toString(),
-        customerId: req.user._id.toString(),
-        carwashId: carwash._id.toString(),
-        service: service.name,
-      });
-
-      // Update booking with payment intent ID
-      booking.payment.paymentIntentId = paymentIntent.paymentIntentId;
-      await booking.save();
-
-      res.status(201).json({
-        booking,
-        payment: {
-          clientSecret: paymentIntent.clientSecret,
-          publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-        },
-      });
-    } catch (paymentError) {
-      // If payment fails, delete the booking
-      await Booking.findByIdAndDelete(booking._id);
-      return res.status(400).json({
-        message: "Payment processing failed",
-        error: paymentError.message,
-      });
-    }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-/**
- * Confirm payment and update booking status
- */
-export const confirmBookingPayment = async (req, res) => {
-  try {
-    const { bookingId } = req.body;
-
-    const booking = await Booking.findById(bookingId);
-    if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
-
-    // Check if user owns this booking
-    if (!booking.customer.equals(req.user._id)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    // Confirm payment with Stripe
-    const isPaymentSuccessful = await confirmPayment(
-      booking.payment.paymentIntentId
+    // Create Stripe PaymentIntent
+    const { clientSecret, paymentIntentId } = await createPaymentIntent(
+      amount,
+      "gel",
+      { bookingId: booking._id.toString() }
     );
 
-    if (isPaymentSuccessful) {
-      booking.payment.status = "paid";
-      booking.status = "pending"; // Ready for owner acceptance
-      await booking.save();
+    // Save payment intent ID
+    booking.payment.paymentIntentId = paymentIntentId;
+    await booking.save();
 
-      res.json({
-        message: "Payment confirmed successfully",
-        booking,
-      });
-    } else {
-      booking.payment.status = "failed";
-      await booking.save();
+    // Notify carwash owner via email (async, no await)
+    sendBookingNotification(booking, carwash);
 
-      res.status(400).json({
-        message: "Payment failed or not confirmed",
-      });
-    }
+    res.status(201).json({
+      booking,
+      clientSecret,
+      paymentIntentId,
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Create booking error:", err);
+    res.status(500).json({ message: "Failed to create booking" });
   }
 };
 
-/**
- * Owner sees bookings for their carwashes
- */
+// Customer's bookings
+export const customerBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find({ customer: req.user._id })
+      .populate("carwash", "businessName")
+      .sort({ scheduledTime: -1 });
+    res.json(bookings);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch bookings" });
+  }
+};
+
+// Owner's bookings (for their carwashes)
 export const ownerBookings = async (req, res) => {
   try {
-    if (req.user.role !== "owner" && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-
-    const carwashes = await Carwash.find({ owner: req.user._id }).select("_id");
-    const carwashIds = carwashes.map((c) => c._id);
+    const carwashes = await Carwash.find({ owner: req.carwash?._id || req.user._id });
+    const carwashIds = carwashes.map(c => c._id);
 
     const bookings = await Booking.find({ carwash: { $in: carwashIds } })
       .populate("customer", "name email")
-      .populate("carwash", "name location.address")
-      .sort({ createdAt: -1 });
+      .sort({ scheduledTime: -1 });
 
     res.json(bookings);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Failed to fetch owner bookings" });
   }
 };
 
-/**
- * Customer sees their own bookings
- */
-export const customerBookings = async (req, res) => {
-  try {
-    if (req.user.role !== "customer") {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-
-    const bookings = await Booking.find({ customer: req.user._id })
-      .populate("carwash", "name location.address")
-      .sort({ createdAt: -1 });
-
-    res.json(bookings);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
+// Owner updates status (accept/reject/complete)
 export const updateBookingStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
+  const { status } = req.body;
 
-    const booking = await Booking.findById(id).populate("carwash");
+  try {
+    const booking = await Booking.findById(req.params.id);
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-    // Only carwash owner or admin can change status
-    if (
-      !booking.carwash.owner.equals(req.user._id) &&
-      req.user.role !== "admin"
-    ) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-
-    // Check if payment was made before accepting
-    if (status === "accepted" && booking.payment.status !== "paid") {
-      return res.status(400).json({
-        message: "Cannot accept booking without payment",
-      });
-    }
-
-    if (
-      !["pending", "accepted", "rejected", "cancelled", "completed"].includes(
-        status
-      )
-    ) {
-      return res.status(400).json({ message: "Invalid status" });
+    // Check ownership
+    const carwash = await Carwash.findById(booking.carwash);
+    if (carwash.owner.toString() !== req.carwash?._id.toString()) {
+      return res.status(403).json({ message: "Not authorized" });
     }
 
     booking.status = status;
@@ -208,7 +173,24 @@ export const updateBookingStatus = async (req, res) => {
 
     res.json(booking);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Failed to update booking" });
+  }
+};
+
+// Confirm payment (optional manual endpoint)
+export const confirmBookingPayment = async (req, res) => {
+  const { paymentIntentId } = req.body;
+
+  try {
+    const booking = await Booking.findOne({ "payment.paymentIntentId": paymentIntentId });
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    booking.payment.status = "paid";
+    booking.status = "pending";
+    await booking.save();
+
+    res.json({ message: "Payment confirmed", booking });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to confirm payment" });
   }
 };
