@@ -2,7 +2,6 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Carwash from "../models/Carwash.js";
 import { v2 as cloudinary } from "cloudinary";
-import streamifier from "streamifier";
 
 // Generate JWT for carwash owner
 const createCarwashToken = (carwash) => {
@@ -27,7 +26,6 @@ export const registerCarwash = async (req, res) => {
       workingHours,
     } = req.body;
 
-    // Required fields validation
     if (
       !businessName ||
       !ownerName ||
@@ -44,16 +42,13 @@ export const registerCarwash = async (req, res) => {
       return res.status(400).json({ message: "Missing or invalid required fields" });
     }
 
-    // Check if email already exists
     const exists = await Carwash.findOne({ email });
     if (exists) {
       return res.status(409).json({ message: "Email already exists" });
     }
 
-    // Hash password
     const hashed = await bcrypt.hash(password, 10);
 
-    // Create carwash
     const carwash = await Carwash.create({
       businessName,
       ownerName,
@@ -64,7 +59,7 @@ export const registerCarwash = async (req, res) => {
         address: location.address,
         coordinates: {
           type: "Point",
-          coordinates: location.coordinates.coordinates, // [lng, lat]
+          coordinates: location.coordinates.coordinates,
         },
       },
       services: services.map((s) => ({
@@ -80,7 +75,6 @@ export const registerCarwash = async (req, res) => {
 
     const token = createCarwashToken(carwash);
 
-    // Flat response
     res.status(201).json({
       token,
       id: carwash._id,
@@ -152,7 +146,7 @@ export const currentUserCarwash = (req, res) => {
     location: req.carwash.location,
     services: req.carwash.services,
     workingHours: req.carwash.workingHours,
-    images: req.carwash.images || [], // ← added images
+    images: req.carwash.images || [],
     type: "carwash",
   });
 };
@@ -197,10 +191,11 @@ export const updateCarwash = async (req, res) => {
   }
 };
 
+// Upload images – explicit credentials per upload
 export const uploadCarwashImages = async (req, res) => {
   console.log("=== IMAGE UPLOAD START ===");
   console.log("Time:", new Date().toISOString());
-  console.log("Auth carwash ID:", req.carwash?._id || "MISSING");
+  console.log("Carwash ID:", req.carwash?._id || "MISSING");
   console.log("Files count:", req.files?.length || 0);
 
   try {
@@ -214,49 +209,49 @@ export const uploadCarwashImages = async (req, res) => {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    console.log("First file details:", {
-      name: req.files[0].originalname,
-      size: req.files[0].size,
-      mimetype: req.files[0].mimetype,
-      bufferLength: req.files[0].buffer?.length || "NO BUFFER",
+    console.log("First file:", {
+      name: req.files[0]?.originalname,
+      size: req.files[0]?.size,
+      buffer: !!req.files[0]?.buffer,
     });
 
     const imageUrls = [];
 
-    for (let i = 0; i < req.files.length; i++) {
-      const file = req.files[i];
-      console.log(`Uploading file ${i+1}/${req.files.length}: ${file.originalname}`);
+    for (const file of req.files) {
+      console.log(`Uploading file: ${file.originalname}`);
 
       if (!file.buffer) {
-        console.log("ERROR: File has no buffer");
+        console.log("ERROR: No buffer");
         throw new Error("File buffer missing");
       }
 
       const result = await new Promise((resolve, reject) => {
-        console.log("Starting Cloudinary stream upload...");
-        const uploadStream = cloudinary.uploader.upload_stream(
+        console.log("Starting Cloudinary upload...");
+        cloudinary.uploader.upload_stream(
           {
             folder: "car4wash",
             resource_type: "image",
+            // Explicit credentials – fixes Vercel/serverless config issues
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
           },
           (error, result) => {
             if (error) {
-              console.error("Cloudinary upload failed:", error.message);
+              console.error("Cloudinary error:", error.message);
               reject(error);
             } else {
               console.log("Cloudinary success:", result.secure_url);
               resolve(result);
             }
           }
-        );
-
-        streamifier.createReadStream(file.buffer).pipe(uploadStream);
+        ).end(file.buffer); // send buffer directly
       });
 
       imageUrls.push(result.secure_url);
     }
 
-    console.log("All uploads done. Saving to DB:", imageUrls);
+    console.log("Uploads done. Saving:", imageUrls);
 
     const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
@@ -265,23 +260,24 @@ export const uploadCarwashImages = async (req, res) => {
     );
 
     if (!updated) {
-      console.log("ERROR: Carwash not found for update");
+      console.log("ERROR: Carwash not found");
       return res.status(404).json({ message: "Carwash not found" });
     }
 
-    console.log("DB updated. Final images count:", updated.images.length);
+    console.log("DB saved. Images:", updated.images.length);
 
     res.status(200).json({
       message: `Uploaded ${imageUrls.length} image(s)`,
       images: updated.images,
     });
   } catch (err) {
-    console.error("=== IMAGE UPLOAD CRASH ===");
+    console.error("=== UPLOAD CRASH ===");
     console.error("Message:", err.message);
     console.error("Stack:", err.stack);
     res.status(500).json({ message: "Server error during image upload" });
   }
 };
+
 // Delete single image
 export const deleteCarwashImage = async (req, res) => {
   try {
@@ -294,24 +290,27 @@ export const deleteCarwashImage = async (req, res) => {
       return res.status(400).json({ message: "Image URL is required" });
     }
 
-    // Remove from database
     const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
       { $pull: { images: imageUrl } },
       { new: true, select: "images" }
     );
 
-    // Optional: delete from Cloudinary (recommended)
+    // Optional: delete from Cloudinary
     try {
       const publicId = imageUrl.split("/").pop().split(".")[0];
-      await cloudinary.uploader.destroy(`car4wash/${publicId}`);
+      await cloudinary.uploader.destroy(`car4wash/${publicId}`, {
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+      });
     } catch (cloudErr) {
-      console.warn("Cloudinary delete failed, but DB updated:", cloudErr);
+      console.warn("Cloudinary delete failed:", cloudErr.message);
     }
 
     res.json({
       message: "Image deleted",
-      images: updated.images,
+      images: updated?.images || [],
     });
   } catch (err) {
     console.error("Delete image error:", err);
