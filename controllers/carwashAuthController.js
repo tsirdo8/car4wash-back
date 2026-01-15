@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Carwash from "../models/Carwash.js";
 
+import cloudinary from "../config/cloudinary.js";
+
 // Generate JWT for carwash owner
 const createCarwashToken = (carwash) => {
   return jwt.sign(
@@ -199,4 +201,60 @@ export const updateCarwash = async (req, res) => {
 // Can be expanded later with token blacklisting if needed
 export const logoutCarwash = (req, res) => {
   res.json({ message: "Logged out successfully" });
+};
+
+
+export const uploadCarwashImages = async (req, res) => {
+  try {
+    if (!req.carwash) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // req.files comes from multer
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    // Extract Cloudinary URLs
+    const imageUrls = req.files.map((file) => file.path); // or file.secure_url
+
+    // Add to carwash document
+    const updatedCarwash = await Carwash.findByIdAndUpdate(
+      req.carwash._id,
+      { $push: { images: { $each: imageUrls } } },
+      { new: true }
+    );
+
+    res.status(200).json({
+      message: "Images uploaded successfully",
+      images: updatedCarwash.images,
+    });
+  } catch (err) {
+    console.error("Image upload error:", err);
+    res.status(500).json({ message: "Server error during upload" });
+  }
+};
+
+// Optional: Delete single image
+export const deleteCarwashImage = async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+    if (!imageUrl) {
+      return res.status(400).json({ message: "Image URL required" });
+    }
+
+    const updated = await Carwash.findByIdAndUpdate(
+      req.carwash._id,
+      { $pull: { images: imageUrl } },
+      { new: true }
+    );
+
+    // Optional: delete from Cloudinary
+    const publicId = imageUrl.split("/").pop().split(".")[0];
+    await cloudinary.uploader.destroy(`carwashes/${publicId}`);
+
+    res.json({ images: updated.images });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete image" });
+  }
 };
