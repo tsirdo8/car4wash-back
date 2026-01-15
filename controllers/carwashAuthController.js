@@ -197,36 +197,43 @@ export const updateCarwash = async (req, res) => {
   }
 };
 
-// controllers/carwashAuthController.js
 export const uploadCarwashImages = async (req, res) => {
-  console.log("[UPLOAD START] Request received at", new Date().toISOString());
-  console.log("[UPLOAD] Headers:", req.headers);
-  console.log("[UPLOAD] Has carwash?", !!req.carwash);
-  console.log("[UPLOAD] Files received:", req.files?.length || 0);
+  console.log("=== IMAGE UPLOAD START ===");
+  console.log("Time:", new Date().toISOString());
+  console.log("Auth carwash ID:", req.carwash?._id || "MISSING");
+  console.log("Files count:", req.files?.length || 0);
 
   try {
     if (!req.carwash) {
-      console.log("[UPLOAD] Missing req.carwash");
-      return res.status(401).json({ message: "Unauthorized - no carwash data" });
+      console.log("ERROR: No req.carwash");
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     if (!req.files || req.files.length === 0) {
-      console.log("[UPLOAD] No files in req.files");
+      console.log("ERROR: No files received");
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    console.log("[UPLOAD] First file info:", {
-      originalname: req.files[0]?.originalname,
-      size: req.files[0]?.size,
-      hasBuffer: !!req.files[0]?.buffer,
+    console.log("First file details:", {
+      name: req.files[0].originalname,
+      size: req.files[0].size,
+      mimetype: req.files[0].mimetype,
+      bufferLength: req.files[0].buffer?.length || "NO BUFFER",
     });
 
     const imageUrls = [];
 
-    for (const file of req.files) {
-      console.log("[UPLOAD] Starting upload for:", file.originalname);
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      console.log(`Uploading file ${i+1}/${req.files.length}: ${file.originalname}`);
+
+      if (!file.buffer) {
+        console.log("ERROR: File has no buffer");
+        throw new Error("File buffer missing");
+      }
 
       const result = await new Promise((resolve, reject) => {
+        console.log("Starting Cloudinary stream upload...");
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: "car4wash",
@@ -234,28 +241,22 @@ export const uploadCarwashImages = async (req, res) => {
           },
           (error, result) => {
             if (error) {
-              console.error("[CLOUDINARY ERROR]", error);
+              console.error("Cloudinary upload failed:", error.message);
               reject(error);
             } else {
+              console.log("Cloudinary success:", result.secure_url);
               resolve(result);
             }
           }
         );
 
-        if (!file.buffer) {
-          console.error("[UPLOAD] No buffer in file:", file.originalname);
-          reject(new Error("File buffer missing"));
-          return;
-        }
-
         streamifier.createReadStream(file.buffer).pipe(uploadStream);
       });
 
-      console.log("[UPLOAD] Success:", result.secure_url);
       imageUrls.push(result.secure_url);
     }
 
-    console.log("[UPLOAD] All uploads done. Saving to DB...");
+    console.log("All uploads done. Saving to DB:", imageUrls);
 
     const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
@@ -263,17 +264,21 @@ export const uploadCarwashImages = async (req, res) => {
       { new: true, select: "images" }
     );
 
-    console.log("[UPLOAD] DB update success. Images now:", updated?.images?.length || 0);
+    if (!updated) {
+      console.log("ERROR: Carwash not found for update");
+      return res.status(404).json({ message: "Carwash not found" });
+    }
+
+    console.log("DB updated. Final images count:", updated.images.length);
 
     res.status(200).json({
       message: `Uploaded ${imageUrls.length} image(s)`,
-      images: updated?.images || [],
+      images: updated.images,
     });
   } catch (err) {
-    console.error("[UPLOAD CRASH]", {
-      message: err.message,
-      stack: err.stack,
-    });
+    console.error("=== IMAGE UPLOAD CRASH ===");
+    console.error("Message:", err.message);
+    console.error("Stack:", err.stack);
     res.status(500).json({ message: "Server error during image upload" });
   }
 };
