@@ -197,20 +197,35 @@ export const updateCarwash = async (req, res) => {
   }
 };
 
-// Upload images (multiple) - direct to Cloudinary
+// controllers/carwashAuthController.js
 export const uploadCarwashImages = async (req, res) => {
+  console.log("[UPLOAD START] Request received at", new Date().toISOString());
+  console.log("[UPLOAD] Headers:", req.headers);
+  console.log("[UPLOAD] Has carwash?", !!req.carwash);
+  console.log("[UPLOAD] Files received:", req.files?.length || 0);
+
   try {
     if (!req.carwash) {
-      return res.status(401).json({ message: "Unauthorized" });
+      console.log("[UPLOAD] Missing req.carwash");
+      return res.status(401).json({ message: "Unauthorized - no carwash data" });
     }
 
     if (!req.files || req.files.length === 0) {
+      console.log("[UPLOAD] No files in req.files");
       return res.status(400).json({ message: "No files uploaded" });
     }
+
+    console.log("[UPLOAD] First file info:", {
+      originalname: req.files[0]?.originalname,
+      size: req.files[0]?.size,
+      hasBuffer: !!req.files[0]?.buffer,
+    });
 
     const imageUrls = [];
 
     for (const file of req.files) {
+      console.log("[UPLOAD] Starting upload for:", file.originalname);
+
       const result = await new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
@@ -218,16 +233,29 @@ export const uploadCarwashImages = async (req, res) => {
             resource_type: "image",
           },
           (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
+            if (error) {
+              console.error("[CLOUDINARY ERROR]", error);
+              reject(error);
+            } else {
+              resolve(result);
+            }
           }
         );
+
+        if (!file.buffer) {
+          console.error("[UPLOAD] No buffer in file:", file.originalname);
+          reject(new Error("File buffer missing"));
+          return;
+        }
 
         streamifier.createReadStream(file.buffer).pipe(uploadStream);
       });
 
+      console.log("[UPLOAD] Success:", result.secure_url);
       imageUrls.push(result.secure_url);
     }
+
+    console.log("[UPLOAD] All uploads done. Saving to DB...");
 
     const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
@@ -235,16 +263,20 @@ export const uploadCarwashImages = async (req, res) => {
       { new: true, select: "images" }
     );
 
+    console.log("[UPLOAD] DB update success. Images now:", updated?.images?.length || 0);
+
     res.status(200).json({
       message: `Uploaded ${imageUrls.length} image(s)`,
-      images: updated.images,
+      images: updated?.images || [],
     });
   } catch (err) {
-    console.error("Image upload error:", err);
+    console.error("[UPLOAD CRASH]", {
+      message: err.message,
+      stack: err.stack,
+    });
     res.status(500).json({ message: "Server error during image upload" });
   }
 };
-
 // Delete single image
 export const deleteCarwashImage = async (req, res) => {
   try {
