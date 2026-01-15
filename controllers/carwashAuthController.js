@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Carwash from "../models/Carwash.js";
-
-import cloudinary from "../config/cloudinary.js";
+import { v2 as cloudinary } from "cloudinary";
+import streamifier from "streamifier";
 
 // Generate JWT for carwash owner
 const createCarwashToken = (carwash) => {
@@ -80,7 +80,7 @@ export const registerCarwash = async (req, res) => {
 
     const token = createCarwashToken(carwash);
 
-    // Flat response (no nested carwash object)
+    // Flat response
     res.status(201).json({
       token,
       id: carwash._id,
@@ -107,7 +107,6 @@ export const loginCarwash = async (req, res) => {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
-    // Find user and include password for comparison
     const carwash = await Carwash.findOne({ email }).select("+password");
     if (!carwash) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -120,7 +119,6 @@ export const loginCarwash = async (req, res) => {
 
     const token = createCarwashToken(carwash);
 
-    // Flat response
     res.json({
       token,
       id: carwash._id,
@@ -139,7 +137,7 @@ export const loginCarwash = async (req, res) => {
   }
 };
 
-// Get current carwash (protected)
+// Get current carwash
 export const currentUserCarwash = (req, res) => {
   if (!req.carwash) {
     return res.status(401).json({ message: "Unauthorized - no carwash data" });
@@ -154,11 +152,12 @@ export const currentUserCarwash = (req, res) => {
     location: req.carwash.location,
     services: req.carwash.services,
     workingHours: req.carwash.workingHours,
+    images: req.carwash.images || [], // ← added images
     type: "carwash",
   });
 };
 
-// Update carwash profile
+// Update carwash profile (text fields)
 export const updateCarwash = async (req, res) => {
   try {
     if (!req.carwash) {
@@ -189,6 +188,7 @@ export const updateCarwash = async (req, res) => {
       ownerName: updated.ownerName,
       email: updated.email,
       phone: updated.phone,
+      images: updated.images || [],
       type: "carwash",
     });
   } catch (err) {
@@ -197,74 +197,92 @@ export const updateCarwash = async (req, res) => {
   }
 };
 
-// Logout (stateless – just success message)
-// Can be expanded later with token blacklisting if needed
-export const logoutCarwash = (req, res) => {
-  res.json({ message: "Logged out successfully" });
-};
-
-
+// Upload images (multiple) - direct to Cloudinary
 export const uploadCarwashImages = async (req, res) => {
   try {
     if (!req.carwash) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // req.files comes from multer
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    // Extract Cloudinary URLs
-    const imageUrls = req.files.map((file) => file.path); // or file.secure_url
+    const imageUrls = [];
 
-    // Add to carwash document
-    const updatedCarwash = await Carwash.findByIdAndUpdate(
+    for (const file of req.files) {
+      const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: "car4wash",
+            resource_type: "image",
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+
+        streamifier.createReadStream(file.buffer).pipe(uploadStream);
+      });
+
+      imageUrls.push(result.secure_url);
+    }
+
+    const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
       { $push: { images: { $each: imageUrls } } },
-      { new: true }
+      { new: true, select: "images" }
     );
 
     res.status(200).json({
-      message: "Images uploaded successfully",
-      images: updatedCarwash.images,
+      message: `Uploaded ${imageUrls.length} image(s)`,
+      images: updated.images,
     });
   } catch (err) {
     console.error("Image upload error:", err);
-    res.status(500).json({ message: "Server error during upload" });
+    res.status(500).json({ message: "Server error during image upload" });
   }
 };
 
+// Delete single image
 export const deleteCarwashImage = async (req, res) => {
   try {
-    const { imageUrl } = req.body;
-
-    if (!imageUrl) {
-      return res.status(400).json({ message: "Image URL required" });
+    if (!req.carwash) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // Remove image from DB
+    const { imageUrl } = req.body;
+    if (!imageUrl) {
+      return res.status(400).json({ message: "Image URL is required" });
+    }
+
+    // Remove from database
     const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
       { $pull: { images: imageUrl } },
-      { new: true }
+      { new: true, select: "images" }
     );
 
-    if (!updated) {
-      return res.status(404).json({ message: "Carwash not found" });
+    // Optional: delete from Cloudinary (recommended)
+    try {
+      const publicId = imageUrl.split("/").pop().split(".")[0];
+      await cloudinary.uploader.destroy(`car4wash/${publicId}`);
+    } catch (cloudErr) {
+      console.warn("Cloudinary delete failed, but DB updated:", cloudErr);
     }
 
-    // Extract correct Cloudinary publicId
-    const publicId = imageUrl
-      .split("/upload/")[1]
-      .split(".")[0];
-
-    // Delete from Cloudinary
-    await cloudinary.uploader.destroy(publicId);
-
-    res.json({ images: updated.images });
+    res.json({
+      message: "Image deleted",
+      images: updated.images,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Delete image error:", err);
     res.status(500).json({ message: "Failed to delete image" });
   }
+};
+
+// Logout
+export const logoutCarwash = (req, res) => {
+  res.json({ message: "Logged out successfully" });
 };
