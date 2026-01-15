@@ -6,7 +6,7 @@ import {
   updateCarwash,
   logoutCarwash,
 } from "../controllers/carwashAuthController.js";
-import { auth } from "../middleware/auth.js"; // your existing middleware
+import { auth } from "../middleware/carwashAuth.js"; // your existing middleware
 
 const router = express.Router();
 
