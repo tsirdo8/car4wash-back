@@ -5,27 +5,35 @@ import Booking from "../models/Booking.js";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export const handleStripeWebhook = async (req, res) => {
-  console.log("🔔 Webhook received - checking signature...");
+  console.log("Webhook received:", new Date().toISOString());
 
   const sig = req.headers["stripe-signature"];
-
   let event;
 
   try {
-    // Verify the webhook signature
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
-    console.log(`✅ Webhook verified: ${event.type}`);
+    console.log(`Verified event: ${event.type} (ID: ${event.id})`);
   } catch (err) {
-    console.error("❌ Webhook signature verification failed:", err.message);
+    console.error("Webhook signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // Acknowledge immediately – Stripe requires fast 200 OK
+  res.status(200).json({ received: true });
+
+  // Process event asynchronously (non-blocking)
+  processEventAsync(event).catch((err) => {
+    console.error("Background webhook processing failed:", err);
+  });
+};
+
+// Background processing (runs after response is sent)
+async function processEventAsync(event) {
   try {
-    // Handle the event
     switch (event.type) {
       case "payment_intent.succeeded":
         await handlePaymentSuccess(event.data.object);
@@ -36,56 +44,59 @@ export const handleStripeWebhook = async (req, res) => {
         break;
 
       default:
-        console.log(`➡️ Unhandled event type: ${event.type}`);
+        console.log(`Ignored event type: ${event.type}`);
     }
-
-    res.json({ received: true });
-  } catch (error) {
-    console.error("❌ Webhook handler error:", error);
-    res.status(500).json({ error: "Webhook handler failed" });
+  } catch (err) {
+    console.error("Webhook event processing error:", err);
   }
-};
+}
 
 const handlePaymentSuccess = async (paymentIntent) => {
-  console.log(`💰 Payment succeeded: ${paymentIntent.id}`);
+  console.log(`Payment succeeded: ${paymentIntent.id}`);
 
   const booking = await Booking.findOne({
     "payment.paymentIntentId": paymentIntent.id,
   });
 
-  if (booking) {
-    booking.payment.status = "paid";
-    booking.status = "pending";
-    await booking.save();
-    console.log(`✅ Booking ${booking._id} updated to PAID`);
-  } else {
-    console.log(`❌ No booking found for payment intent: ${paymentIntent.id}`);
+  if (!booking) {
+    console.log(`No booking found for ${paymentIntent.id}`);
+    return;
   }
+
+  // Idempotency: skip if already processed
+  if (booking.payment.status === "paid") {
+    console.log(`Already processed: ${paymentIntent.id}`);
+    return;
+  }
+
+  booking.payment.status = "paid";
+  booking.status = "pending"; // or "confirmed" if auto-accept
+  await booking.save();
+
+  console.log(`Booking ${booking._id} updated to PAID`);
 };
 
 const handlePaymentFailure = async (paymentIntent) => {
-  console.log(`❌ Payment failed: ${paymentIntent.id}`);
+  console.log(`Payment failed: ${paymentIntent.id}`);
 
   const booking = await Booking.findOne({
     "payment.paymentIntentId": paymentIntent.id,
   });
 
-  if (booking) {
+  if (booking && booking.payment.status !== "failed") {
     booking.payment.status = "failed";
     await booking.save();
-    console.log(`📝 Booking ${booking._id} marked as PAYMENT FAILED`);
+    console.log(`Booking ${booking._id} marked FAILED`);
   }
 };
 
-// Add test function for development
+// Test endpoint (for local dev only – disable in production if needed)
 export const testWebhook = async (req, res) => {
   try {
-    const { paymentIntentId, eventType } = req.body;
-
-    console.log("🧪 Testing webhook with:", { paymentIntentId, eventType });
+    const { paymentIntentId, eventType = "payment_intent.succeeded" } = req.body;
 
     if (!paymentIntentId) {
-      return res.status(400).json({ message: "paymentIntentId is required" });
+      return res.status(400).json({ message: "paymentIntentId required" });
     }
 
     const booking = await Booking.findOne({
@@ -93,46 +104,20 @@ export const testWebhook = async (req, res) => {
     });
 
     if (!booking) {
-      return res
-        .status(404)
-        .json({ message: "Booking not found for this payment intent" });
+      return res.status(404).json({ message: "Booking not found" });
     }
 
     if (eventType === "payment_intent.succeeded") {
-      booking.payment.status = "paid";
-      booking.status = "pending";
-      await booking.save();
-
-      return res.json({
-        message: "Webhook test - Payment succeeded",
-        booking: {
-          _id: booking._id,
-          status: booking.status,
-          payment: booking.payment,
-        },
-      });
+      await handlePaymentSuccess({ id: paymentIntentId });
+      return res.json({ message: "Test: Payment succeeded", booking });
     } else if (eventType === "payment_intent.payment_failed") {
-      booking.payment.status = "failed";
-      await booking.save();
-
-      return res.json({
-        message: "Webhook test - Payment failed",
-        booking: {
-          _id: booking._id,
-          status: booking.status,
-          payment: booking.payment,
-        },
-      });
+      await handlePaymentFailure({ id: paymentIntentId });
+      return res.json({ message: "Test: Payment failed", booking });
     } else {
-      return res.status(400).json({
-        message:
-          "Invalid event type. Use 'payment_intent.succeeded' or 'payment_intent.payment_failed'",
-      });
+      return res.status(400).json({ message: "Invalid event type" });
     }
-  } catch (error) {
-    console.error("❌ Webhook test error:", error);
-    res
-      .status(500)
-      .json({ error: "Webhook test failed", details: error.message });
+  } catch (err) {
+    console.error("Test webhook error:", err);
+    res.status(500).json({ error: err.message });
   }
 };
