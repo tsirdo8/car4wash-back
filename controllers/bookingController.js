@@ -3,8 +3,7 @@ import Carwash from "../models/Carwash.js";
 import { createPaymentIntent } from "../services/stripeService.js";
 import nodemailer from "nodemailer";
 
-// At the top of bookingController.js
-import nodemailer from "nodemailer";
+
 
 // Create reusable transporter (do this once, outside functions)
 const transporter = nodemailer.createTransport({
