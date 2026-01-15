@@ -93,17 +93,7 @@ app.get("/api/debug/cookies", (req, res) => {
    HEALTH CHECK
 ========================= */
 app.get("/", (_, res) => res.json({ ok: true }));
-app.get("/debug-cloudinary-env", (req, res) => {
-  res.json({
-    hasCloudName: !!process.env.CLOUDINARY_CLOUD_NAME,
-    hasApiKey: !!process.env.CLOUDINARY_API_KEY,
-    hasApiSecret: !!process.env.CLOUDINARY_API_SECRET,
-    cloudNameValue: process.env.CLOUDINARY_CLOUD_NAME || "MISSING",
-    apiKeyFirst4: process.env.CLOUDINARY_API_KEY
-      ? process.env.CLOUDINARY_API_KEY.substring(0, 4) + "..."
-      : "MISSING",
-  });
-});
+
 /* =========================
    ERROR HANDLER
 ========================= */
