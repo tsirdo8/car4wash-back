@@ -235,26 +235,36 @@ export const uploadCarwashImages = async (req, res) => {
   }
 };
 
-// Optional: Delete single image
 export const deleteCarwashImage = async (req, res) => {
   try {
     const { imageUrl } = req.body;
+
     if (!imageUrl) {
       return res.status(400).json({ message: "Image URL required" });
     }
 
+    // Remove image from DB
     const updated = await Carwash.findByIdAndUpdate(
       req.carwash._id,
       { $pull: { images: imageUrl } },
       { new: true }
     );
 
-    // Optional: delete from Cloudinary
-    const publicId = imageUrl.split("/").pop().split(".")[0];
-    await cloudinary.uploader.destroy(`carwashes/${publicId}`);
+    if (!updated) {
+      return res.status(404).json({ message: "Carwash not found" });
+    }
+
+    // Extract correct Cloudinary publicId
+    const publicId = imageUrl
+      .split("/upload/")[1]
+      .split(".")[0];
+
+    // Delete from Cloudinary
+    await cloudinary.uploader.destroy(publicId);
 
     res.json({ images: updated.images });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Failed to delete image" });
   }
 };
