@@ -1,7 +1,7 @@
 // routes/carwashAuth.js
 import express from "express";
 import upload from "../middleware/upload.js"; // your multer config
-import { auth } from "../middleware/auth.js"; // your general auth middleware
+import { auth } from "../middleware/carwashAuth.js"; // your general auth middleware
 
 import {
   registerCarwash,
