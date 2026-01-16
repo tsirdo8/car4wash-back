@@ -31,6 +31,6 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-oauth2": "^1.8.0",
     "streamifier": "^0.1.1",
-    "stripe": "^20.0.0"
+    "stripe": "^20.1.2"
   }
 }
