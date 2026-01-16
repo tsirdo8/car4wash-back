@@ -22,7 +22,7 @@ router.put("/update", auth, updateCarwash);
 
 // NEW: Upload images (multiple files allowed)
 router.post("/upload-images", auth, upload.array("images", 10), uploadCarwashImages);
-router.delete("/delete", authCarwash, deleteCarwash);
+router.delete("/delete", auth, deleteCarwash);
 // NEW: Delete image
 router.delete("/delete-image", auth, deleteCarwashImage);
 
