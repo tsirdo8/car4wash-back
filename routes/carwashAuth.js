@@ -10,6 +10,7 @@ import {
   updateCarwash,
   uploadCarwashImages,
   deleteCarwashImage,
+   deleteCarwash, 
 } from "../controllers/carwashAuthController.js";
 
 const router = express.Router();
@@ -21,7 +22,7 @@ router.put("/update", auth, updateCarwash);
 
 // NEW: Upload images (multiple files allowed)
 router.post("/upload-images", auth, upload.array("images", 10), uploadCarwashImages);
-
+router.delete("/delete", authCarwash, deleteCarwash);
 // NEW: Delete image
 router.delete("/delete-image", auth, deleteCarwashImage);
 

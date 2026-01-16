@@ -318,7 +318,42 @@ export const deleteCarwashImage = async (req, res) => {
   }
 };
 
+export const deleteCarwash = async (req, res) => {
+  try {
+    if (!req.carwash) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const carwashId = req.carwash._id;
+
+    // Optional: Delete all images from Cloudinary
+    if (req.carwash.images?.length) {
+      for (const url of req.carwash.images) {
+        try {
+          const publicId = url.split("/").pop().split(".")[0];
+          await cloudinary.uploader.destroy(`car4wash/${publicId}`, {
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+          });
+        } catch (cloudErr) {
+          console.warn("Cloudinary delete failed:", cloudErr.message);
+        }
+      }
+    }
+
+    // Delete carwash from DB
+    await Carwash.findByIdAndDelete(carwashId);
+
+    res.json({ message: "Carwash account deleted successfully" });
+  } catch (err) {
+    console.error("Delete carwash error:", err);
+    res.status(500).json({ message: "Failed to delete account" });
+  }
+};
+
 // Logout
 export const logoutCarwash = (req, res) => {
   res.json({ message: "Logged out successfully" });
 };
+
