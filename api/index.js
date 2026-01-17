@@ -42,6 +42,7 @@ const corsOptions = {
     "https://cs2-hm11-beta.vercel.app",
     "https://sng-1.vercel.app",
     "https://car4wash.vercel.app",
+    "https://spotless-rose.vercel.app"
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
